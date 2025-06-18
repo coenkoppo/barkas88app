@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: var(--font-body), sans-serif;
+}
+
+@layer base {
+  :root {
+    --background: 140 50% 96%; /* Very light, slightly desaturated green (almost off-white with green tint) */
+    --foreground: 140 30% 20%; /* Dark, desaturated green/gray for text */
+    --card: 0 0% 100%; /* White cards for content clarity */
+    --card-foreground: 140 30% 20%; /* Dark text on white cards */
+    --popover: 0 0% 100%; /* White popovers */
+    --popover-foreground: 140 30% 20%; /* Dark text on popovers */
+    --primary: 140 60% 40%; /* Vibrant, but not overly bright, green for accents/buttons */
+    --primary-foreground: 140 100% 97%; /* Very light (almost white) text on primary */
+    --secondary: 140 40% 70%; /* Softer green for secondary elements */
+    --secondary-foreground: 140 30% 20%; /* Dark text for secondary elements */
+    --muted: 140 40% 90%; /* Very light muted green */
+    --muted-foreground: 140 25% 45%; /* Medium-dark muted green for less important text */
+    --accent: 150 65% 50%; /* A slightly bluer green for other accents */
+    --accent-foreground: 0 0% 98%; /* White text on accent */
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 140 30% 85%; /* Lighter green border */
+    --input: 140 30% 92%; /* Light green input background */
+    --ring: 140 60% 50%; /* Green for focus rings */
+    --chart-1: 140 70% 50%;
+    --chart-2: 145 60% 45%;
+    --chart-3: 150 50% 40%;
+    --chart-4: 135 70% 55%;
+    --chart-5: 140 80% 60%;
+    --radius: 0.5rem;
+
+    /* Sidebar specific colors for green theme */
+    --sidebar-background: 140 45% 92%; /* Very light green, slightly more saturated than main bg */
+    --sidebar-foreground: 140 30% 15%; /* Dark green text */
+    --sidebar-primary: 140 60% 40%; /* Same as app primary */
+    --sidebar-primary-foreground: 140 100% 97%; /* Same as app primary-foreground */
+    --sidebar-accent: 140 50% 85%;      /* Lighter green for hover */
+    --sidebar-accent-foreground: 140 30% 10%; /* Darker green text on hover */
+    --sidebar-border: 140 30% 80%;      /* Muted green border for sidebar elements */
+    --sidebar-ring: 140 60% 50%;       /* Ring color (similar to app ring) */
+  }
+
+  .dark {
+    --background: 140 25% 10%; /* Very dark green/charcoal */
+    --foreground: 140 40% 90%; /* Light, slightly muted green/gray for text */
+    --card: 140 20% 13%; /* Darker green cards */
+    --card-foreground: 140 40% 90%; /* Light text on dark cards */
+    --popover: 140 20% 13%;
+    --popover-foreground: 140 40% 90%;
+    --primary: 140 65% 55%; /* Brighter green for accents in dark mode */
+    --primary-foreground: 140 25% 10%; /* Very dark text for primary buttons for contrast */
+    --secondary: 140 20% 20%; /* Dark muted green for secondary elements */
+    --secondary-foreground: 140 40% 90%; /* Light text for secondary */
+    --muted: 140 20% 15%; /* Darker muted for less important elements */
+    --muted-foreground: 140 30% 65%; /* Lighter muted text */
+    --accent: 150 50% 45%; /* Slightly bluer green accent for dark mode */
+    --accent-foreground: 0 0% 98%; /* White text on accent */
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 140 20% 25%; /* Darker border */
+    --input: 140 20% 20%; /* Darker input background */
+    --ring: 140 65% 65%; /* Lighter green for focus rings */
+    --chart-1: 140 70% 60%;
+    --chart-2: 145 60% 55%;
+    --chart-3: 150 50% 50%;
+    --chart-4: 135 70% 65%;
+    --chart-5: 140 80% 70%;
+
+    /* Sidebar specific colors for dark green theme */
+    --sidebar-background: 140 20% 12%; /* Slightly different dark green from main bg */
+    --sidebar-foreground: 140 40% 85%; /* Light green text */
+    --sidebar-primary: 140 65% 55%; /* Same as app primary */
+    --sidebar-primary-foreground: 140 25% 10%; /* Same as app primary-foreground */
+    --sidebar-accent: 140 25% 22%;      /* Darker green for hover */
+    --sidebar-accent-foreground: 140 50% 90%; /* Lighter green text on hover */
+    --sidebar-border: 140 20% 20%;      /* Muted green border for sidebar elements */
+    --sidebar-ring: 140 65% 65%;       /* Ring color (similar to app ring) */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
