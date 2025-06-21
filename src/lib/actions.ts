@@ -1,4 +1,3 @@
-
 'use server';
 
 import { z } from 'zod';
@@ -11,9 +10,21 @@ import {
     ProductCategory, 
     ProductTag, 
     type Product,
-    type ProductFormValues
+    type ProductFormValues,
+    productFormSchema
 } from '@/types';
-import { mockOrders, mockProducts } from './mock-data'; 
+import { 
+  createProduct as createProductFirestore,
+  getAllProducts,
+  getAllOrders,
+  createOrder as createOrderFirestore,
+  updateOrder,
+  getAllCustomers,
+  getProductById,
+  updateProduct as updateProductFirestore,
+  deleteProduct as deleteProductFirestore,
+  deleteOrder as deleteOrderFirestore
+} from './firestore';
 import { revalidatePath } from 'next/cache';
 
 const customerOrderSchema = z.object({
@@ -39,12 +50,23 @@ export async function createOrder(data: CustomerOrderInput): Promise<{ success: 
   try {
     const validatedData = customerOrderSchema.parse(data);
 
+    // Ambil data produk dari Firestore untuk validasi
+    const products = await getAllProducts();
+    
     let subtotal = 0;
+    const orderItems: CartItem[] = [];
+    
     for (const item of validatedData.items) {
-      const product = mockProducts.find(p => p.id === item.id);
+      const product = products.find(p => p.id === item.id);
       if (!product) throw new Error(`Produk dengan ID ${item.id} tidak ditemukan.`);
       if (product.stock < item.quantity) throw new Error(`Stok tidak cukup untuk ${product.name}.`);
+      
       subtotal += item.price * item.quantity;
+      orderItems.push({
+        ...product,
+        quantity: item.quantity,
+        price: item.price
+      });
     }
     
     let discountAmount = 0;
@@ -56,7 +78,7 @@ export async function createOrder(data: CustomerOrderInput): Promise<{ success: 
     const totalAmount = subtotal - discountAmount + shippingFee;
     
     let orderStatus = OrderStatus.Pending;
-    const amountActuallyPaid = 0; // Initial payment is 0 for new orders from customer side
+    const amountActuallyPaid = 0;
 
     if (validatedData.paymentMethod === PaymentMethod.COD || validatedData.paymentMethod === PaymentMethod.Cash) {
         orderStatus = OrderStatus.Processing; 
@@ -64,18 +86,9 @@ export async function createOrder(data: CustomerOrderInput): Promise<{ success: 
         orderStatus = OrderStatus.AwaitingPayment; 
     }
 
-    const newOrderId = `ORD${String(mockOrders.length + 1).padStart(3, '0')}`;
-    const newOrder: Order = {
-      id: newOrderId,
+    const newOrder = {
       customerInfo: validatedData.customerInfo,
-      items: validatedData.items.map(item => {
-        const productDetails = mockProducts.find(p => p.id === item.id)!; 
-        return {
-            ...productDetails, 
-            price: item.price, 
-            quantity: item.quantity,
-        };
-      }),
+      items: orderItems,
       subtotal,
       shippingFee,
       discountAmount,
@@ -85,21 +98,16 @@ export async function createOrder(data: CustomerOrderInput): Promise<{ success: 
       notes: validatedData.notes,
       status: orderStatus,
       amountActuallyPaid: amountActuallyPaid,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
     };
 
-    mockOrders.push(newOrder);
-    // Stock reduction logic can be added here or when payment is confirmed
-    // For simulation, we might reduce stock if status moves to Processing or Paid.
+    const orderId = await createOrderFirestore(newOrder);
     
     revalidatePath('/cart'); 
     revalidatePath('/'); 
     revalidatePath('/admin/orders');
     revalidatePath('/admin/customers');
 
-
-    return { success: true, orderId: newOrder.id };
+    return { success: true, orderId };
   } catch (error) {
     console.error('Error creating order:', error);
     if (error instanceof z.ZodError) {
@@ -142,20 +150,16 @@ export async function createAdminOrder(data: AdminOrderPayload): Promise<{ succe
   try {
     const validatedData = adminOrderPayloadSchema.parse(data);
     
-    const newOrderId = `ADM_ORD${String(mockOrders.length + 1).padStart(3, '0')}`;
-    const newOrder: Order = {
-      id: newOrderId,
+    const newOrder = {
       ...validatedData, 
       amountActuallyPaid: validatedData.amountActuallyPaid || 0,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
     };
 
-    mockOrders.push(newOrder);
-    // Stock reduction logic could be here based on status
+    const orderId = await createOrderFirestore(newOrder);
+    
     revalidatePath('/admin/orders');
     revalidatePath('/admin/customers');
-    return { success: true, orderId: newOrder.id };
+    return { success: true, orderId };
 
   } catch (error) {
     console.error('Error creating admin order:', error);
@@ -167,12 +171,13 @@ export async function createAdminOrder(data: AdminOrderPayload): Promise<{ succe
 }
 
 export async function updateAdminOrder(orderId: string, data: Partial<AdminOrderPayload & { customerName?: string, customerPhone?: string, customerAddress?: string }>): Promise<{ success: boolean; orderId?: string; error?: string }> {
-    const orderIndex = mockOrders.findIndex(o => o.id === orderId);
-    if (orderIndex === -1) {
-        return { success: false, error: `Pesanan dengan ID ${orderId} tidak ditemukan.` };
-    }
+  try {
+    const orders = await getAllOrders();
+    const currentOrder = orders.find(o => o.id === orderId);
     
-    const currentOrder = mockOrders[orderIndex];
+    if (!currentOrder) {
+      return { success: false, error: `Pesanan dengan ID ${orderId} tidak ditemukan.` };
+    }
     
     const updatedCustomerInfo = {
         name: data.customerName || currentOrder.customerInfo.name,
@@ -180,72 +185,91 @@ export async function updateAdminOrder(orderId: string, data: Partial<AdminOrder
         address: data.customerAddress || currentOrder.customerInfo.address,
     };
 
-    const updatedOrderData: Order = {
-        ...currentOrder,
+    const updatedOrderData: Partial<Order> = {
         customerInfo: updatedCustomerInfo,
-        items: data.items ? data.items.map(item => { 
-            const productDetails = mockProducts.find(p => p.id === item.id) || item as any; 
-            return {
-                ...productDetails,
-                id: item.id,
-                name: item.name || productDetails.name,
-                price: (item as any).unitPrice !== undefined ? (item as any).unitPrice : item.price,
-                quantity: item.quantity,
-                description: item.description || productDetails.description,
-                imageUrl: item.imageUrl || productDetails.imageUrl,
-                category: item.category || productDetails.category,
-                tags: item.tags || productDetails.tags,
-                stock: item.stock !== undefined ? item.stock : productDetails.stock,
-            };
-        }) : currentOrder.items,
         paymentMethod: data.paymentMethod || currentOrder.paymentMethod,
-        status: data.orderStatus || data.status || currentOrder.status, // Ensure status is taken from form data
+        status: data.orderStatus || data.status || currentOrder.status,
         shippingFee: data.shippingFee !== undefined ? data.shippingFee : currentOrder.shippingFee,
         discountAmount: data.discountAmount !== undefined ? data.discountAmount : currentOrder.discountAmount,
         amountActuallyPaid: data.amountActuallyPaid !== undefined ? data.amountActuallyPaid : currentOrder.amountActuallyPaid,
         notes: data.notes !== undefined ? data.notes : currentOrder.notes,
-        updatedAt: new Date().toISOString() 
     };
     
-    const newSubtotal = updatedOrderData.items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-    updatedOrderData.subtotal = newSubtotal;
-    updatedOrderData.totalAmount = newSubtotal + updatedOrderData.shippingFee - updatedOrderData.discountAmount;
+    if (data.items) {
+      const products = await getAllProducts();
+      updatedOrderData.items = data.items.map(item => {
+        const productDetails = products.find(p => p.id === item.id) || item as any; 
+        return {
+            ...productDetails,
+            id: item.id,
+            name: item.name || productDetails.name,
+            price: (item as any).unitPrice !== undefined ? (item as any).unitPrice : item.price,
+            quantity: item.quantity,
+            description: item.description || productDetails.description,
+            imageUrl: item.imageUrl || productDetails.imageUrl,
+            category: item.category || productDetails.category,
+            tags: item.tags || productDetails.tags,
+            stock: item.stock !== undefined ? item.stock : productDetails.stock,
+        };
+      });
+      
+      const newSubtotal = updatedOrderData.items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+      updatedOrderData.subtotal = newSubtotal;
+      updatedOrderData.totalAmount = newSubtotal + updatedOrderData.shippingFee! - updatedOrderData.discountAmount!;
+    }
 
-    mockOrders[orderIndex] = updatedOrderData;
+    await updateOrder(orderId, updatedOrderData);
     
     revalidatePath('/admin/orders');
     revalidatePath(`/admin/orders/${orderId}/edit`);
     revalidatePath('/admin/customers');
     return { success: true, orderId };
+  } catch (error) {
+    console.error('Error updating admin order:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Terjadi kesalahan tidak diketahui.' };
+  }
 }
 
+export async function deleteAdminOrder(orderId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    await deleteOrderFirestore(orderId);
+    revalidatePath('/admin/orders');
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting order:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Terjadi kesalahan tidak diketahui.' };
+  }
+}
 
 export async function getAdminOrders(): Promise<Order[]> {
-  return JSON.parse(JSON.stringify(mockOrders));
+  try {
+    return await getAllOrders();
+  } catch (error) {
+    console.error('Error fetching orders:', error);
+    return [];
+  }
 }
 
 export async function createProduct(data: ProductFormValues): Promise<{ success: boolean; productId?: string; error?: string }> {
   try {
     const validatedData = productFormSchema.parse(data);
 
-    const newProductId = `PROD${String(mockProducts.length + 1).padStart(4, '0')}`;
-    const newProduct: Product = {
-      id: newProductId,
+    const newProduct = {
       name: validatedData.name,
       description: validatedData.description,
       price: validatedData.price,
-      imageUrl: validatedData.imageUrl || `https://placehold.co/600x400.png?text=${encodeURIComponent(validatedData.name)}`,
+      imageUrl: validatedData.imageUrl || `https://images.pexels.com/photos/1350789/pexels-photo-1350789.jpeg?auto=compress&cs=tinysrgb&w=600`,
       category: validatedData.category,
       tags: validatedData.tags,
       stock: validatedData.stock,
     };
 
-    mockProducts.unshift(newProduct); 
+    const productId = await createProductFirestore(newProduct);
 
     revalidatePath('/admin/products');
     revalidatePath('/'); 
 
-    return { success: true, productId: newProduct.id };
+    return { success: true, productId };
   } catch (error) {
     console.error('Error creating product:', error);
     if (error instanceof z.ZodError) {
@@ -255,19 +279,49 @@ export async function createProduct(data: ProductFormValues): Promise<{ success:
   }
 }
 
+export async function updateProduct(productId: string, data: ProductFormValues): Promise<{ success: boolean; error?: string }> {
+  try {
+    const validatedData = productFormSchema.parse(data);
+    await updateProductFirestore(productId, validatedData);
+    
+    revalidatePath('/admin/products');
+    revalidatePath('/');
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating product:', error);
+    if (error instanceof z.ZodError) {
+      return { success: false, error: error.errors.map(e => e.message).join(', ') };
+    }
+    return { success: false, error: error instanceof Error ? error.message : 'Terjadi kesalahan tidak diketahui.' };
+  }
+}
+
+export async function deleteProduct(productId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    await deleteProductFirestore(productId);
+    revalidatePath('/admin/products');
+    revalidatePath('/');
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting product:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Terjadi kesalahan tidak diketahui.' };
+  }
+}
+
 export async function getAdminProducts(): Promise<Product[]> {
-  return JSON.parse(JSON.stringify(mockProducts));
+  try {
+    return await getAllProducts();
+  } catch (error) {
+    console.error('Error fetching products:', error);
+    return [];
+  }
 }
 
 export async function getAdminCustomers(): Promise<CustomerInfo[]> {
-  const customersMap = new Map<string, CustomerInfo>();
-
-  mockOrders.forEach(order => {
-    if (order.customerInfo && order.customerInfo.phoneNumber && !customersMap.has(order.customerInfo.phoneNumber)) {
-      customersMap.set(order.customerInfo.phoneNumber, order.customerInfo);
-    }
-  });
-
-  const uniqueCustomers = Array.from(customersMap.values());
-  return JSON.parse(JSON.stringify(uniqueCustomers));
+  try {
+    return await getAllCustomers();
+  } catch (error) {
+    console.error('Error fetching customers:', error);
+    return [];
+  }
 }
