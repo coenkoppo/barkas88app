@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -25,7 +24,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { toast } from '@/hooks/use-toast';
-import { getAdminOrders } from '@/lib/actions'; // Import the server action
+import { getAdminOrders, deleteAdminOrder } from '@/lib/actions';
 
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -55,7 +54,6 @@ export default function AdminOrdersPage() {
     (order.customerInfo.phoneNumber && order.customerInfo.phoneNumber.includes(searchTerm))
   ).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(price);
   };
@@ -64,34 +62,43 @@ export default function AdminOrdersPage() {
     switch (status) {
       case OrderStatus.Paid:
       case OrderStatus.Delivered:
-        return 'default'; // Primary (Green in current theme) - Positive/Completed
-      case OrderStatus.DPPaid: // "belum lunas" -> "merah atau kuning" -> using 'destructive' (merah) for attention
+        return 'default';
+      case OrderStatus.DPPaid:
         return 'destructive'; 
-      case OrderStatus.AwaitingPayment: // Needs payment attention - using secondary (softer green)
-      case OrderStatus.Pending:       // Needs attention - using secondary (softer green)
+      case OrderStatus.AwaitingPayment:
+      case OrderStatus.Pending:
         return 'secondary'; 
       case OrderStatus.Processing:
       case OrderStatus.Shipped:
-        return 'outline';   // Neutral - In progress
+        return 'outline';
       case OrderStatus.Cancelled:
       case OrderStatus.Refunded:
-        return 'destructive'; // Red - Problematic/Final negative status
+        return 'destructive';
       default:
         return 'outline';
     }
   };
 
-  const handleDeleteOrder = (orderId: string) => {
-    // Placeholder for delete logic
-    // In a real app, this would be a server action call
-    // await deleteOrderAction(orderId);
-    setOrders(prevOrders => prevOrders.filter(order => order.id !== orderId));
-    toast({
-      title: `Pesanan ${orderId} Dihapus`,
-      description: "Pesanan telah dihapus (simulasi).",
-    });
+  const handleDeleteOrder = async (orderId: string) => {
+    try {
+      const result = await deleteAdminOrder(orderId);
+      if (result.success) {
+        setOrders(prevOrders => prevOrders.filter(order => order.id !== orderId));
+        toast({
+          title: `Pesanan ${orderId} Dihapus`,
+          description: "Pesanan telah dihapus dari database.",
+        });
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error) {
+      toast({
+        title: 'Gagal Menghapus Pesanan',
+        description: error instanceof Error ? error.message : 'Terjadi kesalahan tidak diketahui.',
+        variant: 'destructive'
+      });
+    }
   };
-
 
   return (
     <AdminLayout>
@@ -122,7 +129,6 @@ export default function AdminOrdersPage() {
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
                     </div>
-                    {/* <Button variant="outline"><Filter className="mr-2 h-4 w-4" /> Filters</Button> */}
                 </div>
             </div>
           </CardHeader>
