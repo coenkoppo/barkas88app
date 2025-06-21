@@ -1,9 +1,8 @@
-
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
 import { ProductCard } from '@/components/ProductCard';
-import { mockProducts } from '@/lib/mock-data';
+import { getAllProducts, initializeDefaultData } from '@/lib/firestore';
 import type { Product } from '@/types';
 import { ProductCategory, ProductTag } from '@/types';
 import { Input } from '@/components/ui/input';
@@ -21,11 +20,24 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      setProducts(mockProducts);
-      setIsLoading(false);
-    }, 500); // Simulate network delay
+    async function loadProducts() {
+      setIsLoading(true);
+      try {
+        // Inisialisasi data default jika belum ada
+        await initializeDefaultData();
+        
+        // Ambil semua produk dari Firestore
+        const fetchedProducts = await getAllProducts();
+        setProducts(fetchedProducts);
+      } catch (error) {
+        console.error('Error loading products:', error);
+        setProducts([]);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    
+    loadProducts();
   }, []);
 
   const filteredProducts = useMemo(() => {
